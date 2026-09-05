@@ -347,6 +347,14 @@
       return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
     });
   }
+  // Accepts a normal YouTube link (watch?v=, youtu.be/, shorts/, or an embed link already)
+  // and returns an embeddable https://www.youtube.com/embed/<id> URL, or null if it doesn't
+  // look like a YouTube link -- this only ever points at YouTube's own official player.
+  function youtubeEmbedUrl(url){
+    if (!url) return null;
+    var m = String(url).match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    return m ? 'https://www.youtube.com/embed/' + m[1] : null;
+  }
   function toast(msg){
     var el = document.createElement('div');
     el.className = 'toast';
@@ -677,6 +685,11 @@
     }
     html += '</div>';
 
+    var embedUrl = youtubeEmbedUrl(song.videoUrl);
+    if (embedUrl){
+      html += '<div class="video-embed"><iframe src="'+escapeHtml(embedUrl)+'" title="Vídeo de '+escapeHtml(song.title)+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>';
+    }
+
     html += '<div class="cifra-scroll"><div class="cifra-body" style="--cifra-font-size:'+ui.fontSize+'px;">';
     html += renderCifraLines(song.body || '', offset, preferFlat);
     html += '</div></div>';
@@ -790,8 +803,8 @@
     var html = '<div class="form-view">';
     html += '<div class="form-header"><button class="icon-btn" data-action="cancel">&#8592;</button><h2>'+(editing?'Editar música':'Nova música')+'</h2></div>';
 
-    html += '<div class="paste-hint">Abra a música no Cifra Club, selecione todo o texto (Ctrl+A) e copie (Ctrl+C). Cole abaixo — título, artista e tom são detectados automaticamente.</div>';
-    html += '<div class="field"><label>Cifra completa (colar aqui)</label><textarea class="cifra-input" id="f-paste" placeholder="Cole aqui o texto copiado do Cifra Club...">'+escapeHtml(editing?editing.body:'')+'</textarea></div>';
+    html += '<div class="paste-hint">Selecione todo o texto da cifra (Ctrl+A) e copie (Ctrl+C). Cole abaixo — título, artista e tom são detectados automaticamente.</div>';
+    html += '<div class="field"><label>Cifra completa (colar aqui)</label><textarea class="cifra-input" id="f-paste" placeholder="Cole aqui o texto da cifra...">'+escapeHtml(editing?editing.body:'')+'</textarea></div>';
     html += '<div class="detect-row"><button class="link-btn" id="detect-btn">Detectar automaticamente &#8594;</button></div>';
 
     html += '<div class="field-row">';
@@ -802,6 +815,7 @@
     html += '<div class="field"><label>Tom</label><input id="f-tone" type="text" placeholder="ex: G, Am, C#m" value="'+escapeHtml(editing?editing.tone:'')+'"></div>';
     html += '<div class="field"><label>Estilo</label><input id="f-style" list="style-list" type="text" placeholder="ex: Sertanejo, Rock" value="'+escapeHtml(editing?editing.style:'')+'"></div>';
     html += '</div>';
+    html += '<div class="field"><label>Link do vídeo (YouTube, opcional)</label><input id="f-video" type="text" placeholder="Cole aqui o link do YouTube" value="'+escapeHtml(editing?(editing.videoUrl||''):'')+'"></div>';
     html += '<datalist id="style-list">'+styles.map(function(s){ return '<option value="'+escapeHtml(s)+'">'; }).join('')+'</datalist>';
 
     html += '<label class="fav-toggle"><input type="checkbox" id="f-fav" '+(editing&&editing.favorite?'checked':'')+'> Marcar como favorita</label>';
@@ -850,6 +864,7 @@
         editing.style = document.getElementById('f-style').value.trim();
         editing.favorite = document.getElementById('f-fav').checked;
         editing.body = body;
+        editing.videoUrl = document.getElementById('f-video').value.trim();
         saveSongs();
         ui.currentId = editing.id; ui.view = 'viewer'; render();
       } else {
@@ -861,6 +876,7 @@
           style: document.getElementById('f-style').value.trim(),
           favorite: document.getElementById('f-fav').checked,
           body: body,
+          videoUrl: document.getElementById('f-video').value.trim(),
           createdAt: Date.now()
         };
         songs.push(newSong);

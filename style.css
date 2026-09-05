@@ -17,12 +17,12 @@
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --bg:#1B1610;
-      --surface:#241D15;
-      --surface-2:#2D2417;
+      --bg:#161616;
+      --surface:#1E1E1E;
+      --surface-2:#272727;
       --text:#F1E7D6;
       --text-dim:#B7A78C;
-      --border:#3B3122;
+      --border:#383838;
       --accent:#E4924F;
       --chord:#F0A868;
       --star:#E6C468;
@@ -33,12 +33,12 @@
     }
   }
   :root[data-theme="dark"]{
-    --bg:#1B1610;
-    --surface:#241D15;
-    --surface-2:#2D2417;
+    --bg:#161616;
+    --surface:#1E1E1E;
+    --surface-2:#272727;
     --text:#F1E7D6;
     --text-dim:#B7A78C;
-    --border:#3B3122;
+    --border:#383838;
     --accent:#E4924F;
     --chord:#F0A868;
     --star:#E6C468;
@@ -53,12 +53,12 @@
      setting. Placed after it in the stylesheet so an explicit in-app choice always wins,
      while leaving data-theme free to keep working when the user hasn't overridden anything. */
   :root[data-cf-theme="dark"]{
-    --bg:#1B1610;
-    --surface:#241D15;
-    --surface-2:#2D2417;
+    --bg:#161616;
+    --surface:#1E1E1E;
+    --surface-2:#272727;
     --text:#F1E7D6;
     --text-dim:#B7A78C;
-    --border:#3B3122;
+    --border:#383838;
     --accent:#E4924F;
     --chord:#F0A868;
     --star:#E6C468;
@@ -282,6 +282,12 @@
     min-width:16px;text-align:center;flex:none;
   }
 
+  .video-embed{
+    position:relative;width:100%;padding-top:56.25%;background:#000;
+    margin:0 0 4px;
+  }
+  .video-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
+
   .cifra-scroll{flex:1;overflow-x:auto;overflow-y:visible;padding:20px 16px 30px;}
   .cifra-body{
     font-family:'JetBrains Mono',monospace;
@@ -352,4 +358,25 @@
     .cifra-body{max-width:680px;}
     .viewer-bottom{max-width:680px;margin:0 auto;width:100%;}
     .chords-section{max-width:680px;margin-left:auto;margin-right:auto;}
+    .video-embed{max-width:680px;margin:0 auto 4px;}
+  }
+
+  /* Bigger type on phones -- the desktop sizes above read as small on a handheld screen. */
+  @media (max-width:719px){
+    .brand h1{font-size:30px;}
+    .brand .tagline{font-size:13px;}
+    .search-input{font-size:17px;padding:12px 14px;}
+    .chip{font-size:14px;padding:8px 14px;}
+    .sort-select{font-size:14px;padding:8px 10px;}
+    .song-card .title{font-size:19px;}
+    .song-card .meta{font-size:14px;}
+    .tone-badge{font-size:13px;}
+    .style-pill{font-size:13px;}
+    .viewer-title-block h2{font-size:21px;}
+    .viewer-title-block .artist{font-size:14px;}
+    .stepper .value{font-size:14px;}
+    .btn{font-size:16px;padding:13px 16px;}
+    .nav-btn{font-size:16px;}
+    .menu-pop button{font-size:15px;}
+    .cifra-body{font-size:calc(var(--cifra-font-size, 15px) + 3px);}
   }
