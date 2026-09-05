@@ -1,12 +1,12 @@
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
   :root{
-    --bg:#F5EEE0;
+    --bg:#F2F2F2;
     --surface:#FFFFFF;
-    --surface-2:#EEE3CC;
+    --surface-2:#E8E8E8;
     --text:#2A2015;
     --text-dim:#6E5F4C;
-    --border:#DCCEAE;
+    --border:#DADADA;
     --accent:#B4552A;
     --chord:#A8461F;
     --star:#C7932A;
@@ -68,12 +68,12 @@
     --focus:#E4924F;
   }
   :root[data-cf-theme="light"]{
-    --bg:#F5EEE0;
+    --bg:#F2F2F2;
     --surface:#FFFFFF;
-    --surface-2:#EEE3CC;
+    --surface-2:#E8E8E8;
     --text:#2A2015;
     --text-dim:#6E5F4C;
-    --border:#DCCEAE;
+    --border:#DADADA;
     --accent:#B4552A;
     --chord:#A8461F;
     --star:#C7932A;
