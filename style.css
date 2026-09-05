@@ -144,13 +144,13 @@
   .filter-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .chip{
     border:1px solid var(--border);background:var(--surface);color:var(--text-dim);
-    padding:6px 13px;border-radius:999px;font-size:13px;font-weight:500;
-    display:flex;align-items:center;gap:5px;white-space:nowrap;
+    height:34px;padding:0 13px;border-radius:999px;font-size:13px;font-weight:500;
+    box-sizing:border-box;display:flex;align-items:center;gap:5px;white-space:nowrap;
   }
   .chip.active{background:var(--accent);border-color:var(--accent);color:#fff;}
   .sort-select{
-    margin-left:auto;padding:6px 10px;border-radius:999px;border:1px solid var(--border);
-    background:var(--surface);color:var(--text-dim);font-size:13px;
+    margin-left:auto;height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--border);
+    background:var(--surface);color:var(--text-dim);font-size:13px;box-sizing:border-box;
   }
 
   /* ---------- Song list ---------- */
@@ -366,8 +366,8 @@
     .brand h1{font-size:30px;}
     .brand .tagline{font-size:13px;}
     .search-input{font-size:17px;padding:12px 14px;}
-    .chip{font-size:14px;padding:8px 14px;}
-    .sort-select{font-size:14px;padding:8px 10px;}
+    .chip{font-size:14px;height:38px;padding:0 14px;}
+    .sort-select{font-size:14px;height:38px;padding:0 14px;}
     .song-card .title{font-size:19px;}
     .song-card .meta{font-size:14px;}
     .tone-badge{font-size:13px;}
