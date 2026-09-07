@@ -423,8 +423,9 @@
       } else {
         audioPlayer.yt = new YT.Player('cf-audio-player', {
           videoId: videoId,
-          playerVars: { autoplay: 1, controls: 0 },
+          playerVars: { autoplay: 1, controls: 0, playsinline: 1 },
           events: {
+            onReady: function(e){ try{ e.target.playVideo(); }catch(err){} },
             onStateChange: function(e){
               audioPlayer.playing = (e.data === YT.PlayerState.PLAYING);
               updateAudioButton();
@@ -1081,6 +1082,7 @@
     injectInstallTags();
     detectPlatform();
     wireInstallEvents();
+    ensureYouTubeApi(); // carrega cedo, sem esperar -- assim o clique no play não depende de um script externo no meio, o que derruba o autoplay no celular
     render();
   }
 
