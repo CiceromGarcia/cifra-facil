@@ -282,11 +282,13 @@
     min-width:16px;text-align:center;flex:none;
   }
 
-  .video-embed{
-    position:relative;width:100%;padding-top:56.25%;background:#000;
-    margin:0 0 4px;
+  .audio-row{display:flex;align-items:center;gap:10px;margin-top:10px;}
+  .audio-btn{
+    flex:none;width:34px;height:34px;border-radius:10px;border:1px solid var(--border);
+    background:var(--surface);color:var(--text);font-size:13px;
+    display:flex;align-items:center;justify-content:center;
   }
-  .video-embed iframe{position:absolute;inset:0;width:100%;height:100%;border:0;}
+  .audio-btn.on{background:var(--accent);border-color:var(--accent);color:#fff;}
 
   .cifra-scroll{flex:1;overflow-x:auto;overflow-y:visible;padding:20px 16px 30px;}
   .cifra-body{
@@ -358,7 +360,6 @@
     .cifra-body{max-width:680px;}
     .viewer-bottom{max-width:680px;margin:0 auto;width:100%;}
     .chords-section{max-width:680px;margin-left:auto;margin-right:auto;}
-    .video-embed{max-width:680px;margin:0 auto 4px;}
   }
 
   /* Bigger type on phones -- the desktop sizes above read as small on a handheld screen. */

@@ -45,8 +45,16 @@
     }
     return hasLetter;
   }
+  // Some chord/tab sites (e.g. Cifra Club) leave a stray `">` glued onto an
+  // otherwise bare chord line when their page is copied — a leftover tail of
+  // an HTML tag that survives the copy (e.g. `">D` instead of just `D`).
+  // Strip it before classifying the line so the chord is still recognized.
+  function stripPasteArtifacts(line){
+    return line.replace(/^(\s*)">/, '$1');
+  }
   // Classifies a line as blank | section | labelchord ([Intro] Fm Bb ...) | chord | lyric
   function parseLine(line){
+    line = stripPasteArtifacts(line);
     if (!line.trim()) return { type:'blank' };
     var m = line.match(/^(\s*)(\[[^\]]*\])(.*)$/);
     if (m){
@@ -348,13 +356,85 @@
     });
   }
   // Accepts a normal YouTube link (watch?v=, youtu.be/, shorts/, or an embed link already)
-  // and returns an embeddable https://www.youtube.com/embed/<id> URL, or null if it doesn't
-  // look like a YouTube link -- this only ever points at YouTube's own official player.
-  function youtubeEmbedUrl(url){
+  // and returns the 11-char video id, or null if it doesn't look like a YouTube link --
+  // this only ever talks to YouTube's own official player.
+  function youtubeVideoId(url){
     if (!url) return null;
     var m = String(url).match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-    return m ? 'https://www.youtube.com/embed/' + m[1] : null;
+    return m ? m[1] : null;
   }
+
+  /* ======================= Áudio (YouTube, sem vídeo visível) =======================
+     Toca só o som do link do YouTube da música, num player escondido fora da tela --
+     nunca mostra o vídeo. */
+  var ytApiPromise = null;
+  function ensureYouTubeApi(){
+    if (ytApiPromise) return ytApiPromise;
+    ytApiPromise = new Promise(function(resolve){
+      if (window.YT && window.YT.Player){ resolve(); return; }
+      var prevReady = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = function(){
+        if (prevReady) prevReady();
+        resolve();
+      };
+      var tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+    });
+    return ytApiPromise;
+  }
+
+  var audioPlayer = { yt:null, songId:null, playing:false };
+  function getAudioHolder(){
+    var holder = document.getElementById('cf-audio-holder');
+    if (!holder){
+      holder = document.createElement('div');
+      holder.id = 'cf-audio-holder';
+      holder.style.cssText = 'position:fixed;width:1px;height:1px;overflow:hidden;left:-9999px;top:-9999px;';
+      holder.innerHTML = '<div id="cf-audio-player"></div>';
+      document.body.appendChild(holder);
+    }
+    return holder;
+  }
+  function updateAudioButton(){
+    var btn = document.querySelector('[data-action="audio-toggle"]');
+    if (!btn) return;
+    btn.innerHTML = audioPlayer.playing ? '&#10074;&#10074;' : '&#9654;';
+    btn.classList.toggle('on', audioPlayer.playing);
+    btn.setAttribute('aria-label', audioPlayer.playing ? 'Pausar música' : 'Tocar música junto com a cifra');
+  }
+  function stopSongAudio(){
+    if (audioPlayer.yt && audioPlayer.yt.stopVideo){ try{ audioPlayer.yt.stopVideo(); }catch(e){} }
+    audioPlayer.songId = null;
+    audioPlayer.playing = false;
+    updateAudioButton();
+  }
+  function toggleSongAudio(songId, videoId){
+    if (audioPlayer.songId === songId && audioPlayer.yt && typeof audioPlayer.yt.getPlayerState === 'function'){
+      if (audioPlayer.playing) audioPlayer.yt.pauseVideo(); else audioPlayer.yt.playVideo();
+      return;
+    }
+    audioPlayer.songId = songId;
+    getAudioHolder();
+    ensureYouTubeApi().then(function(){
+      if (audioPlayer.songId !== songId) return; // usuário trocou de música enquanto a API carregava
+      if (audioPlayer.yt && typeof audioPlayer.yt.loadVideoById === 'function'){
+        audioPlayer.yt.loadVideoById(videoId);
+      } else {
+        audioPlayer.yt = new YT.Player('cf-audio-player', {
+          videoId: videoId,
+          playerVars: { autoplay: 1, controls: 0 },
+          events: {
+            onStateChange: function(e){
+              audioPlayer.playing = (e.data === YT.PlayerState.PLAYING);
+              updateAudioButton();
+            }
+          }
+        });
+      }
+    });
+  }
+
   function toast(msg){
     var el = document.createElement('div');
     el.className = 'toast';
@@ -395,12 +475,17 @@
     nonEmpty.forEach(function(i){
       if (/^\s*(Afina[çc][ãa]o|Composi[çc][ãa]o de)\s*:/i.test(lines[i])) consumedIdx[i]=true;
     });
-    // Title = first non-empty, non-consumed, non chord/section line
+    // Title/artist = the first one or two plain lines that sit BEFORE any real song
+    // content (chords, a [section] marker, or a labelchord like "[Intro] D A G").
+    // Once we hit the first such line we stop guessing — a paste with no header at
+    // all (starts straight in on "Tom:" + chords) should leave title/artist blank
+    // instead of cannibalizing the song's actual lyric lines.
     var picked = [];
     for (var k=0;k<nonEmpty.length && picked.length<2;k++){
       var idx = nonEmpty[k];
       if (consumedIdx[idx]) continue;
       var pType = parseLine(lines[idx]).type;
+      if (pType === 'chord' || pType === 'section' || pType === 'labelchord') break;
       if (pType !== 'lyric') continue;
       picked.push(idx);
     }
@@ -677,6 +762,11 @@
     html += '<button class="autoscroll-btn'+(ui.autoScrollOn?' on':'')+'" data-action="autoscroll-toggle" aria-label="'+(ui.autoScrollOn?'Pausar rolagem automática':'Iniciar rolagem automática')+'">'+(ui.autoScrollOn?'&#10074;&#10074;':'&#9654;')+'</button>';
     html += '<div class="speed-control"><span class="lbl">Velocidade</span><input type="range" class="speed-slider" data-action="speed-slider" min="1" max="10" step="1" value="'+ui.scrollSpeed+'"><span class="speed-value">'+ui.scrollSpeed+'</span></div>';
     html += '</div>';
+    var audioVideoId = youtubeVideoId(song.videoUrl);
+    if (audioVideoId){
+      var audioIsOn = (audioPlayer.songId === song.id && audioPlayer.playing);
+      html += '<div class="audio-row"><button class="audio-btn'+(audioIsOn?' on':'')+'" data-action="audio-toggle" aria-label="'+(audioIsOn?'Pausar música':'Tocar música junto com a cifra')+'">'+(audioIsOn?'&#10074;&#10074;':'&#9654;')+'</button></div>';
+    }
     if (ui.menuOpen){
       html += '<div class="menu-pop">';
       html += '<button data-action="edit">Editar</button>';
@@ -684,11 +774,6 @@
       html += '</div>';
     }
     html += '</div>';
-
-    var embedUrl = youtubeEmbedUrl(song.videoUrl);
-    if (embedUrl){
-      html += '<div class="video-embed"><iframe src="'+escapeHtml(embedUrl)+'" title="Vídeo de '+escapeHtml(song.title)+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>';
-    }
 
     html += '<div class="cifra-scroll"><div class="cifra-body" style="--cifra-font-size:'+ui.fontSize+'px;">';
     html += renderCifraLines(song.body || '', offset, preferFlat);
@@ -709,7 +794,9 @@
       prefs.scrollSpeed = ui.scrollSpeed; savePrefs(prefs);
       var valEl = appEl.querySelector('.speed-value'); if (valEl) valEl.textContent = ui.scrollSpeed;
     });
-    appEl.querySelector('[data-action="back"]').addEventListener('click', function(){ stopAutoScroll(); ui.autoScrollOn=false; ui.view='library'; render(); });
+    var audioBtn = appEl.querySelector('[data-action="audio-toggle"]');
+    if (audioBtn) audioBtn.addEventListener('click', function(){ toggleSongAudio(song.id, audioVideoId); });
+    appEl.querySelector('[data-action="back"]').addEventListener('click', function(){ stopAutoScroll(); ui.autoScrollOn=false; stopSongAudio(); ui.view='library'; render(); });
     appEl.querySelector('[data-action="fav"]').addEventListener('click', function(){ song.favorite=!song.favorite; saveSongs(); renderViewer(); });
     appEl.querySelector('[data-action="theme-toggle"]').addEventListener('click', cycleTheme);
     appEl.querySelector('[data-action="menu"]').addEventListener('click', function(){ ui.menuOpen=!ui.menuOpen; renderViewer(); });
@@ -722,11 +809,11 @@
     appEl.querySelector('[data-action="prev"]').addEventListener('click', function(){ navigate(-1); });
     appEl.querySelector('[data-action="next"]').addEventListener('click', function(){ navigate(1); });
     var editBtn = appEl.querySelector('[data-action="edit"]');
-    if (editBtn) editBtn.addEventListener('click', function(){ stopAutoScroll(); ui.autoScrollOn=false; ui.menuOpen=false; ui.editingId=song.id; ui.view='form'; render(); });
+    if (editBtn) editBtn.addEventListener('click', function(){ stopAutoScroll(); ui.autoScrollOn=false; stopSongAudio(); ui.menuOpen=false; ui.editingId=song.id; ui.view='form'; render(); });
     var delBtn = appEl.querySelector('[data-action="delete"]');
     if (delBtn) delBtn.addEventListener('click', function(){
       if (confirm('Excluir "'+song.title+'"? Essa ação não pode ser desfeita.')){
-        stopAutoScroll(); ui.autoScrollOn=false;
+        stopAutoScroll(); ui.autoScrollOn=false; stopSongAudio();
         ui.menuOpen = false;
         songs = songs.filter(function(s){ return s.id!==song.id; });
         saveSongs();
@@ -736,7 +823,7 @@
   }
 
   function navigate(dir){
-    stopAutoScroll(); ui.autoScrollOn=false;
+    stopAutoScroll(); ui.autoScrollOn=false; stopSongAudio();
     var idx = ui.navList.indexOf(ui.currentId);
     if (idx === -1){ ui.currentId = ui.navList[0]; render(); return; }
     var next = (idx + dir + ui.navList.length) % ui.navList.length;
@@ -815,7 +902,7 @@
     html += '<div class="field"><label>Tom</label><input id="f-tone" type="text" placeholder="ex: G, Am, C#m" value="'+escapeHtml(editing?editing.tone:'')+'"></div>';
     html += '<div class="field"><label>Estilo</label><input id="f-style" list="style-list" type="text" placeholder="ex: Sertanejo, Rock" value="'+escapeHtml(editing?editing.style:'')+'"></div>';
     html += '</div>';
-    html += '<div class="field"><label>Link do vídeo (YouTube, opcional)</label><input id="f-video" type="text" placeholder="Cole aqui o link do YouTube" value="'+escapeHtml(editing?(editing.videoUrl||''):'')+'"></div>';
+    html += '<div class="field"><label>Link da música (YouTube, opcional)</label><input id="f-video" type="text" placeholder="Cole aqui o link do YouTube" value="'+escapeHtml(editing?(editing.videoUrl||''):'')+'"></div>';
     html += '<datalist id="style-list">'+styles.map(function(s){ return '<option value="'+escapeHtml(s)+'">'; }).join('')+'</datalist>';
 
     html += '<label class="fav-toggle"><input type="checkbox" id="f-fav" '+(editing&&editing.favorite?'checked':'')+'> Marcar como favorita</label>';
