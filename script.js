@@ -429,6 +429,10 @@
             onStateChange: function(e){
               audioPlayer.playing = (e.data === YT.PlayerState.PLAYING);
               updateAudioButton();
+            },
+            onError: function(){
+              toast('Esse link do YouTube não permite tocar aqui.');
+              stopSongAudio();
             }
           }
         });
