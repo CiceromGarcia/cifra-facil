@@ -430,8 +430,10 @@
               audioPlayer.playing = (e.data === YT.PlayerState.PLAYING);
               updateAudioButton();
             },
-            onError: function(){
-              toast('Esse link do YouTube não permite tocar aqui.');
+            onError: function(e){
+              // Códigos do player do YouTube: 2 link inválido, 5 erro do player em si,
+              // 100 vídeo removido/privado, 101/150 dono do vídeo bloqueou a incorporação.
+              toast('Esse link do YouTube não permite tocar aqui (erro '+e.data+').');
               stopSongAudio();
             }
           }
