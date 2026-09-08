@@ -249,7 +249,17 @@
     } catch(e){ return []; }
   }
   var cachedSongs = loadLocalSongs();
-  var songs = cachedSongs !== null ? cachedSongs : loadSeedSongs();
+  var songs;
+  if (cachedSongs === null){
+    songs = loadSeedSongs();
+  } else {
+    var seedSongs = loadSeedSongs();
+    var existingIds = {};
+    cachedSongs.forEach(function(s){ existingIds[s.id] = true; });
+    var newSeeds = seedSongs.filter(function(s){ return !existingIds[s.id]; });
+    songs = cachedSongs.concat(newSeeds);
+    if (newSeeds.length) cacheLocalSongs(songs);
+  }
 
   var prefs = loadPrefs();
   var ui = {
