@@ -7,7 +7,7 @@
   var NOTE_TO_INDEX = {};
   SHARP_SCALE.forEach(function(n,i){ NOTE_TO_INDEX[n]=i; });
   FLAT_SCALE.forEach(function(n,i){ NOTE_TO_INDEX[n]=i; });
-  var CHORD_RE = /^([A-G])(#|b)?([a-zA-Z0-9\+\(\)º°]*)(\/([A-G])(#|b)?)?$/;
+  var CHORD_RE = /^([A-G])(#|b)?([a-zA-Z0-9\+\-\(\)º°]*)(\/([A-G])(#|b)?)?$/;
 
   function transposeNote(note, accidental, semitones, preferFlat){
     var key = note + (accidental || '');
@@ -51,6 +51,54 @@
   // Strip it before classifying the line so the chord is still recognized.
   function stripPasteArtifacts(line){
     return line.replace(/^(\s*)">/, '$1');
+  }
+  // On some sites the `">Chord` artifact above isn't just glued to a bare chord
+  // line -- it comes with the lyric line that already followed the real chord
+  // repeated a second time right after it (e.g. "Letra\n\">A\nLetra"). Left as-is
+  // that reappears as a visibly duplicated lyric line in the viewer. This walks
+  // the pasted text and, for each `">Chord` marker, finds the most recent lyric
+  // line matching the one right after it: if they're adjacent, the chord belongs
+  // above that lyric (merged onto an existing chord line above it when there is
+  // one, since it means two chords land on the same lyric line); if there's a
+  // gap, the chord is a trailing/pickup chord and goes on its own line right
+  // after that lyric. Either way the repeated lyric copy is dropped.
+  function cleanPasteArtifacts(text){
+    var lines = text.split('\n');
+    var output = [];
+    var i = 0;
+    while (i < lines.length){
+      var line = lines[i];
+      var trimmed = line.trim();
+      if (trimmed.indexOf('">') === 0){
+        var chord = trimmed.slice(2).trim();
+        var nextLine = (i+1 < lines.length) ? lines[i+1] : null;
+        var handled = false;
+        if (nextLine !== null && nextLine.trim() !== ''){
+          var p = output.length - 1;
+          while (p >= 0 && output[p].trim() === '') p--;
+          if (p >= 0 && output[p] === nextLine){
+            var gap = (p !== output.length - 1);
+            if (!gap){
+              var prevIdx = p - 1;
+              if (prevIdx >= 0 && isChordLine(output[prevIdx])){
+                output[prevIdx] = output[prevIdx].replace(/\s+$/, '') + '   ' + chord;
+              } else {
+                output.splice(p, 0, chord);
+              }
+            } else {
+              output.splice(p + 1, 0, chord);
+            }
+            i += 2;
+            handled = true;
+          }
+        }
+        if (!handled){ output.push(chord); i += 1; }
+      } else {
+        output.push(line);
+        i += 1;
+      }
+    }
+    return output.join('\n').replace(/\n{3,}/g, '\n\n');
   }
   // Classifies a line as blank | section | labelchord ([Intro] Fm Bb ...) | chord | lyric
   function parseLine(line){
@@ -475,6 +523,7 @@
 
   /* ======================= Auto-detect from pasted text ======================= */
   function autoDetect(text){
+    text = cleanPasteArtifacts(text);
     var lines = text.split('\n');
     var result = { title:null, artist:null, tone:null };
     var consumedIdx = {};
