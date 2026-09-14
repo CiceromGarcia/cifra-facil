@@ -321,7 +321,12 @@
     return 'https://api.github.com/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/' + GH_SONGS_PATH;
   }
   function ghGetSha(token){
+    // cache: 'no-store' matters here specifically -- this same call is used to
+    // get a fresh sha right before retrying after a 409, and a browser-cached
+    // response would hand back the exact same stale sha, failing again for
+    // the same reason instead of actually resolving the conflict.
     return fetch(ghContentsUrl() + '?ref=' + GH_BRANCH, {
+      cache: 'no-store',
       headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github+json' }
     }).then(function(res){
       if (!res.ok){ var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
@@ -355,14 +360,15 @@
   function syncSongsToGitHub(message){
     var token = getGhToken();
     if (!token) return;
-    function attempt(){
-      return ghGetSha(token).then(function(sha){ return ghPutSongs(token, sha, message); });
+    function attempt(retriesLeft){
+      return ghGetSha(token).then(function(sha){ return ghPutSongs(token, sha, message); }).catch(function(err){
+        if (err && err.status === 409 && retriesLeft > 0) return attempt(retriesLeft - 1);
+        throw err;
+      });
     }
-    attempt().catch(function(err){
-      if (err && err.status === 409) return attempt().catch(onFail);
-      onFail(err);
+    attempt(2).catch(function(){
+      toast('Não sincronizou com o GitHub — salvo só neste aparelho.');
     });
-    function onFail(){ toast('Não sincronizou com o GitHub — salvo só neste aparelho.'); }
   }
   // Called once on startup: pulls the live songs.json and, once it lands,
   // treats it as authoritative (this is what makes a song added on another
@@ -963,7 +969,15 @@
     var audioBtn = appEl.querySelector('[data-action="audio-toggle"]');
     if (audioBtn) audioBtn.addEventListener('click', function(){ toggleSongAudio(song.id, audioVideoId); });
     appEl.querySelector('[data-action="back"]').addEventListener('click', function(){ stopAutoScroll(); ui.autoScrollOn=false; stopSongAudio(); ui.view='library'; render(); });
-    appEl.querySelector('[data-action="fav"]').addEventListener('click', function(){ song.favorite=!song.favorite; saveSongs((song.favorite?'Marca':'Desmarca')+' favorita: '+song.title); renderViewer(); });
+    appEl.querySelector('[data-action="fav"]').addEventListener('click', function(){
+      // Re-find by id instead of mutating the closed-over `song` -- a background
+      // refreshSongsFromGitHub() may have swapped the `songs` array out from
+      // under this view for a freshly-fetched one with new object instances.
+      var cur = songs.find(function(s){ return s.id === song.id; }) || song;
+      cur.favorite = !cur.favorite;
+      saveSongs((cur.favorite?'Marca':'Desmarca')+' favorita: '+cur.title);
+      renderViewer();
+    });
     appEl.querySelector('[data-action="theme-toggle"]').addEventListener('click', cycleTheme);
     appEl.querySelector('[data-action="menu"]').addEventListener('click', function(){ ui.menuOpen=!ui.menuOpen; renderViewer(); });
     appEl.querySelector('[data-action="tone-up"]').addEventListener('click', function(){ setSongTranspose(song.id, offset+1); renderViewer(); });
