@@ -377,6 +377,10 @@
   function refreshSongsFromGitHub(){
     fetchRemoteSongs().then(function(remote){
       if (!Array.isArray(remote)) return;
+      // Never swap `songs` out while the edit form is open -- it holds a
+      // direct reference to one song object and replacing the array would
+      // silently discard whatever the user is mid-typing when they hit Salvar.
+      if (ui.view === 'form') return;
       songs = remote;
       cacheLocalSongs(songs);
       if (ui.view === 'library') renderLibrary();
@@ -1125,15 +1129,21 @@
       var body = document.getElementById('f-paste').value;
       if (!title){ toast('Dê um título pra música.'); return; }
       if (editing){
-        editing.title = title;
-        editing.artist = document.getElementById('f-artist').value.trim();
-        editing.tone = document.getElementById('f-tone').value.trim();
-        editing.style = document.getElementById('f-style').value.trim();
-        editing.favorite = document.getElementById('f-fav').checked;
-        editing.body = body;
-        editing.videoUrl = document.getElementById('f-video').value.trim();
+        // Re-find by id instead of mutating the closed-over `editing` -- a
+        // background refreshSongsFromGitHub() may have swapped the `songs`
+        // array out from under this form for a freshly-fetched one with new
+        // object instances, in which case `editing` would be a detached copy
+        // and every field set on it here would silently never get saved.
+        var cur = songs.find(function(s){ return s.id === editing.id; }) || editing;
+        cur.title = title;
+        cur.artist = document.getElementById('f-artist').value.trim();
+        cur.tone = document.getElementById('f-tone').value.trim();
+        cur.style = document.getElementById('f-style').value.trim();
+        cur.favorite = document.getElementById('f-fav').checked;
+        cur.body = body;
+        cur.videoUrl = document.getElementById('f-video').value.trim();
         saveSongs('Edita música: '+title);
-        ui.currentId = editing.id; ui.view = 'viewer'; render();
+        ui.currentId = cur.id; ui.view = 'viewer'; render();
       } else {
         var newSong = {
           id: uid(),
