@@ -285,11 +285,104 @@
     try { localStorage.setItem(LS_TRANSPOSE_PREFIX+id, String(val)); } catch(e){}
   }
 
+  /* ======================= GitHub sync ======================= */
+  // songs.json (next to this file on GitHub Pages) is the shared song list --
+  // every device reads it on load with no auth needed. Writing back to it
+  // (so a song added on one device shows up on every other one) needs a
+  // GitHub personal access token, entered once per device via the settings
+  // screen and kept in that device's localStorage only. Without a token
+  // saved, everything still behaves exactly as before this feature existed:
+  // purely local, per-device storage.
+  var GH_OWNER = 'CiceromGarcia';
+  var GH_REPO = 'cifra-facil';
+  var GH_SONGS_PATH = 'songs.json';
+  var GH_BRANCH = 'main';
+  var LS_GH_TOKEN = 'cifra-facil:gh-token';
+
+  function getGhToken(){
+    try { return localStorage.getItem(LS_GH_TOKEN) || ''; } catch(e){ return ''; }
+  }
+  function setGhToken(tok){
+    try {
+      if (tok) localStorage.setItem(LS_GH_TOKEN, tok);
+      else localStorage.removeItem(LS_GH_TOKEN);
+    } catch(e){}
+  }
+  function utf8ToBase64(str){
+    return btoa(unescape(encodeURIComponent(str)));
+  }
+  function fetchRemoteSongs(){
+    return fetch(GH_SONGS_PATH + '?t=' + Date.now(), { cache: 'no-store' }).then(function(res){
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    });
+  }
+  function ghContentsUrl(){
+    return 'https://api.github.com/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/' + GH_SONGS_PATH;
+  }
+  function ghGetSha(token){
+    return fetch(ghContentsUrl() + '?ref=' + GH_BRANCH, {
+      headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github+json' }
+    }).then(function(res){
+      if (!res.ok){ var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+      return res.json();
+    }).then(function(data){ return data.sha; });
+  }
+  function ghPutSongs(token, sha, message){
+    var body = {
+      message: message,
+      content: utf8ToBase64(JSON.stringify(songs, null, 2)),
+      sha: sha,
+      branch: GH_BRANCH
+    };
+    return fetch(ghContentsUrl(), {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'token ' + token,
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    }).then(function(res){
+      if (!res.ok){ var e = new Error('HTTP ' + res.status); e.status = res.status; throw e; }
+      return res.json();
+    });
+  }
+  // Fire-and-forget: writes the current `songs` array to songs.json on
+  // GitHub. Retries once on a 409 (someone else/another device wrote in the
+  // meantime) by re-reading the sha and re-applying; gives up with a toast
+  // after that so a flaky connection never blocks the UI.
+  function syncSongsToGitHub(message){
+    var token = getGhToken();
+    if (!token) return;
+    function attempt(){
+      return ghGetSha(token).then(function(sha){ return ghPutSongs(token, sha, message); });
+    }
+    attempt().catch(function(err){
+      if (err && err.status === 409) return attempt().catch(onFail);
+      onFail(err);
+    });
+    function onFail(){ toast('Não sincronizou com o GitHub — salvo só neste aparelho.'); }
+  }
+  // Called once on startup: pulls the live songs.json and, once it lands,
+  // treats it as authoritative (this is what makes a song added on another
+  // device show up here). Leaves whatever's already loaded untouched if the
+  // fetch fails -- offline just means "show what we had".
+  function refreshSongsFromGitHub(){
+    fetchRemoteSongs().then(function(remote){
+      if (!Array.isArray(remote)) return;
+      songs = remote;
+      cacheLocalSongs(songs);
+      if (ui.view === 'library') renderLibrary();
+    }).catch(function(){});
+  }
+
   /* ======================= State ======================= */
-  // Songs ship embedded in this HTML file (see <script id="app-data"> above). The first
-  // time the app runs on a device it loads that seed list; after that, anything added,
-  // edited or starred is cached to localStorage on that device -- there's no server, so
-  // changes made here don't appear on other devices/links.
+  // songs.json (fetched live, see refreshSongsFromGitHub below) is the real
+  // source of truth. What's embedded here in the HTML is only a bootstrap
+  // fallback -- it's what a brand new device shows for the instant before
+  // the first live fetch lands, and what an offline device with no cached
+  // copy of its own falls back to.
   function loadSeedSongs(){
     try {
       var el = document.getElementById('app-data');
@@ -514,11 +607,13 @@
   }
 
   /* ======================= Persistence ======================= */
-  // Cifra Fácil is a static page (hosted on GitHub Pages) with no server and no login.
-  // Songs start from the seed embedded in this file and, from then on, live only in
-  // this browser's localStorage -- call this after any change to the `songs` array.
-  function saveSongs(){
+  // Always caches to this device's localStorage first (instant, works
+  // offline); also pushes to GitHub via syncSongsToGitHub() when this device
+  // has a token saved, so the change shows up everywhere. Call after any
+  // change to the `songs` array.
+  function saveSongs(commitMessage){
     cacheLocalSongs(songs);
+    syncSongsToGitHub(commitMessage || 'Atualiza músicas via Cifra Fácil');
   }
 
   /* ======================= Auto-detect from pasted text ======================= */
@@ -582,6 +677,7 @@
     if (ui.view === 'library') renderLibrary();
     else if (ui.view === 'viewer') renderViewer();
     else if (ui.view === 'form') renderForm();
+    else if (ui.view === 'settings') renderSettings();
   }
 
   function filteredSortedSongs(){
@@ -616,6 +712,7 @@
     html += '<div class="brand"><h1>Cifra <span class="mark">Fácil</span></h1>';
     html += '<div class="topbar-actions">';
     if (!isStandaloneMode && (canInstall || isIOSDevice)) html += '<button class="install-btn" data-action="install">&#8681; Instalar app</button>';
+    html += '<button class="icon-btn" data-action="gh-settings" title="Sincronização com GitHub" aria-label="Sincronização com GitHub">'+(getGhToken()?'&#128274;':'&#128273;')+'</button>';
     html += '<button class="icon-btn theme-btn" data-action="theme-toggle" title="'+themeTitle(ui.theme)+'" aria-label="'+themeTitle(ui.theme)+'">'+themeIcon(ui.theme)+'</button>';
     html += '</div></div>';
     html += '<div class="search-row"><input class="search-input" id="search-input" type="text" placeholder="Buscar música ou artista..." value="'+escapeHtml(ui.search)+'"></div>';
@@ -671,6 +768,9 @@
     var installBtn = appEl.querySelector('[data-action="install"]');
     if (installBtn) installBtn.addEventListener('click', doInstallClick);
     appEl.querySelector('[data-action="theme-toggle"]').addEventListener('click', cycleTheme);
+    appEl.querySelector('[data-action="gh-settings"]').addEventListener('click', function(){
+      ui.view = 'settings'; render();
+    });
     appEl.querySelector('[data-action="add"]').addEventListener('click', function(){
       ui.editingId = null; ui.view = 'form'; render();
     });
@@ -679,7 +779,7 @@
         e.stopPropagation();
         var id = btn.getAttribute('data-star');
         var song = songs.find(function(s){ return s.id===id; });
-        if (song){ song.favorite = !song.favorite; saveSongs(); renderLibrary(); }
+        if (song){ song.favorite = !song.favorite; saveSongs((song.favorite?'Marca':'Desmarca')+' favorita: '+song.title); renderLibrary(); }
       });
     });
     appEl.querySelectorAll('[data-open]').forEach(function(card){
@@ -783,7 +883,7 @@
     ui.sortMode = 'manual';
     prefs.sortMode = 'manual';
     savePrefs(prefs);
-    saveSongs();
+    saveSongs('Reordena músicas');
   }
 
   function openViewer(id, navList){
@@ -863,7 +963,7 @@
     var audioBtn = appEl.querySelector('[data-action="audio-toggle"]');
     if (audioBtn) audioBtn.addEventListener('click', function(){ toggleSongAudio(song.id, audioVideoId); });
     appEl.querySelector('[data-action="back"]').addEventListener('click', function(){ stopAutoScroll(); ui.autoScrollOn=false; stopSongAudio(); ui.view='library'; render(); });
-    appEl.querySelector('[data-action="fav"]').addEventListener('click', function(){ song.favorite=!song.favorite; saveSongs(); renderViewer(); });
+    appEl.querySelector('[data-action="fav"]').addEventListener('click', function(){ song.favorite=!song.favorite; saveSongs((song.favorite?'Marca':'Desmarca')+' favorita: '+song.title); renderViewer(); });
     appEl.querySelector('[data-action="theme-toggle"]').addEventListener('click', cycleTheme);
     appEl.querySelector('[data-action="menu"]').addEventListener('click', function(){ ui.menuOpen=!ui.menuOpen; renderViewer(); });
     appEl.querySelector('[data-action="tone-up"]').addEventListener('click', function(){ setSongTranspose(song.id, offset+1); renderViewer(); });
@@ -882,7 +982,7 @@
         stopAutoScroll(); ui.autoScrollOn=false; stopSongAudio();
         ui.menuOpen = false;
         songs = songs.filter(function(s){ return s.id!==song.id; });
-        saveSongs();
+        saveSongs('Remove música: '+song.title);
         ui.view='library'; render();
       }
     });
@@ -1018,7 +1118,7 @@
         editing.favorite = document.getElementById('f-fav').checked;
         editing.body = body;
         editing.videoUrl = document.getElementById('f-video').value.trim();
-        saveSongs();
+        saveSongs('Edita música: '+title);
         ui.currentId = editing.id; ui.view = 'viewer'; render();
       } else {
         var newSong = {
@@ -1033,7 +1133,7 @@
           createdAt: Date.now()
         };
         songs.push(newSong);
-        saveSongs();
+        saveSongs('Adiciona música: '+newSong.title);
         ui.view = 'library'; render();
         toast('Música adicionada!');
       }
@@ -1044,11 +1144,59 @@
       if (delBtn) delBtn.addEventListener('click', function(){
         if (confirm('Excluir "'+editing.title+'"?')){
           songs = songs.filter(function(s){ return s.id!==editing.id; });
-          saveSongs();
+          saveSongs('Remove música: '+editing.title);
           ui.view='library'; render();
         }
       });
     }
+  }
+
+  function renderSettings(){
+    closeChordPopover();
+    var hasToken = !!getGhToken();
+
+    var html = '<div class="form-view">';
+    html += '<div class="form-header"><button class="icon-btn" data-action="cancel">&#8592;</button><h2>Sincronização com GitHub</h2></div>';
+    html += '<div class="paste-hint">Um token guardado neste navegador permite adicionar, editar e favoritar músicas aqui e ver a mudança em qualquer outro aparelho que também tenha um token salvo. Sem token, este aparelho só lê as músicas — continua funcionando, mas o que você adicionar/editar fica só aqui.</div>';
+    html += '<div class="field"><label>Status neste aparelho</label><div>'+(hasToken?'&#128274; Token salvo — este aparelho pode gravar no GitHub.':'&#128273; Nenhum token salvo — este aparelho só lê as músicas.')+'</div></div>';
+    html += '<div class="field"><label>Personal access token do GitHub</label><input id="gh-token-input" type="password" placeholder="ghp_... ou github_pat_..." autocomplete="off"></div>';
+    html += '<div class="form-actions">';
+    if (hasToken) html += '<button class="btn danger" id="gh-token-clear">Remover token</button>';
+    html += '<button class="btn" id="gh-cancel">Voltar</button>';
+    html += '<button class="btn primary" id="gh-token-save">Salvar</button>';
+    html += '</div>';
+    html += '</div>';
+
+    appEl.innerHTML = html;
+
+    function backFromSettings(){ ui.view = 'library'; render(); }
+    appEl.querySelector('[data-action="cancel"]').addEventListener('click', backFromSettings);
+    document.getElementById('gh-cancel').addEventListener('click', backFromSettings);
+
+    document.getElementById('gh-token-save').addEventListener('click', function(){
+      var tok = document.getElementById('gh-token-input').value.trim();
+      if (!tok){ toast('Cole o token antes de salvar.'); return; }
+      var btn = document.getElementById('gh-token-save');
+      btn.disabled = true; btn.textContent = 'Verificando...';
+      ghGetSha(tok).then(function(){
+        setGhToken(tok);
+        toast('Token salvo — sincronização ativada neste aparelho.');
+        ui.view = 'library'; render();
+      }).catch(function(err){
+        var msg = (err && err.status === 404)
+          ? 'Token válido, mas songs.json não foi encontrado no repositório.'
+          : 'Não deu pra validar esse token (confira se ele tem permissão de leitura/escrita em Conteúdo neste repositório).';
+        toast(msg);
+        btn.disabled = false; btn.textContent = 'Salvar';
+      });
+    });
+
+    var clearBtn = document.getElementById('gh-token-clear');
+    if (clearBtn) clearBtn.addEventListener('click', function(){
+      setGhToken('');
+      toast('Token removido deste aparelho.');
+      ui.view = 'library'; render();
+    });
   }
 
   /* ======================= Init ======================= */
@@ -1149,6 +1297,7 @@
     wireInstallEvents();
     ensureYouTubeApi(); // carrega cedo, sem esperar -- assim o clique no play não depende de um script externo no meio, o que derruba o autoplay no celular
     render();
+    refreshSongsFromGitHub();
   }
 
   if (document.readyState === 'loading'){
